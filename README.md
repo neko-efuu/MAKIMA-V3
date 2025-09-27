@@ -1,55 +1,26 @@
-<h1 align="center">MaHi's Bot </h1>
+# 🤖 Mamima BBz
 
-<p align="center">
-  <a href="https://files.catbox.moe/2qwm2r.mp4">
-    <img src="https://i.imgur.com/MPrrh0Y.jpeg" alt="Watch demo video" width="400"/>
-  </a>
-</p>
+**Mamima BBz** is a smart and fun chatbot, created by **Efat**.  
+This bot brings life into conversations, supports multiple features, and acts like a friendly companion.  
 
 ---
 
-## 👤 OWNER INFO
-
-- 👑 Name: **MaHi**
-- 🏙️ From: **Dhaka**
-- 🎂 Age: **16**
-
----
-
-## ⚙️ HOW TO RUN ON RENDER
-
-### 🥇 1st Step
-Rename these files:
-- `account.txt` → **`account.dev.txt`**
-- `config.json` → **`config.dev.json`**
-- `configcommands.json` → **`configcommand.dev.json`**
+## ✨ Features
+- 🗣️ Natural conversation flow  
+- 🌍 Supports both Bangla & English  
+- 🎭 Fun, friendly & custom replies  
+- ⚡ Lightweight, fast & easy to use  
 
 ---
 
-### 🥈 2nd Step
-- Go to [Render.com](https://render.com) and **sign up**
-- Tap the **left sidebar icon** and choose `Web Service`
-- Connect with GitHub and select your bot repo
-- On setup:
-  - Set **Runtime** to `Node`
-  - Replace **Dockerfile** with `Node`
-- Choose plan ➜ scroll down ➜ click **Deploy Web Service**
-- After deploying, **copy your domain link**
+## 🚀 Getting Started
 
----
+### 1. Clone the Repository
+```bash
+git clone https://github.com/your-username/mamima-bbz.git
+cd mamima-bbz
 
-### 🥉 3rd Step
-Go to [UptimeRobot.com](https://uptimerobot.com) and sign up
-
-- Tap ➕ `Create Monitor`
-- Choose `HTTPS`
-- Paste your domain link
-- Click `Create Monitor`
-
----
-
-## 🎉 DONE! YOUR BOT IS NOW LIVE 24/7!
-
----
-
-> 🤖 **Need help?** Contact MaHi or open an issue in the repo.
+### 1. Clone the Repository
+```bash
+git clone https://github.com/your-username/mamima-bbz.git
+cd mamima-bbz
