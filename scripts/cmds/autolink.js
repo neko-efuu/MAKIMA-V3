@@ -4,22 +4,21 @@ const cheerio = require("cheerio");
 const qs = require("qs");
 const { getStreamFromURL, shortenURL, randomString } = global.utils;
 
+// Central watermark / banner name
+const WATERMARK = "𝐄𝐅𝐀𝐓";
 
 function loadAutoLinkStates() {
   try {
     const data = fs.readFileSync("autolink.json", "utf8");
     return JSON.parse(data);
   } catch (err) {
-
     return {};
   }
 }
 
-
 function saveAutoLinkStates(states) {
   fs.writeFileSync("autolink.json", JSON.stringify(states, null, 2));
 }
-
 
 let autoLinkStates = loadAutoLinkStates();
 
@@ -38,11 +37,48 @@ module.exports = {
       en: '{p}{n}',
     }
   },
+
+  // helper to create banner with the watermark
+  makeBanner: function(name) {
+    return `╔═══ஜ۩۞۩ஜ═══╗
+║       𝗟𝗢𝗔𝗗𝗜𝗡𝗚       
+║           ${name}        
+╚═══ஜ۩۞۩ஜ═══╝`;
+  },
+
+  // unified sending helper for completed downloaded files (works with file saved to path)
+  sendDownloadedVideo: async function(api, event, path, videoUrl) {
+    try {
+      if (!fs.existsSync(path)) {
+        return api.sendMessage("⚠️ ভিডিও প্রক্রিয়াকরণে সমস্যা হয়েছে।", event.threadID, event.messageID);
+      }
+
+      if (fs.statSync(path).size / 1024 / 1024 > 25) {
+        fs.unlinkSync(path);
+        return api.sendMessage("The file is too large, cannot be sent", event.threadID, event.messageID);
+      }
+
+      const shortUrl = await shortenURL(videoUrl);
+      const messageBody = this.makeBanner(WATERMARK) + shortUrl;
+
+      api.sendMessage({
+        body: messageBody,
+        attachment: fs.createReadStream(path)
+      }, event.threadID, () => {
+        try { fs.unlinkSync(path); } catch(e) {}
+      }, event.messageID);
+    } catch (err) {
+      console.error("sendDownloadedVideo error:", err);
+      try { fs.unlinkSync(path); } catch(e) {}
+      api.sendMessage("⚠️ ভিডিও পাঠাতে সমস্যা হয়েছে।", event.threadID, event.messageID);
+    }
+  },
+
   onStart: async function ({ api, event }) {
     const threadID = event.threadID;
 
     if (!autoLinkStates[threadID]) {
-      autoLinkStates[threadID] = 'on'; 
+      autoLinkStates[threadID] = 'on';
       saveAutoLinkStates(autoLinkStates);
     }
 
@@ -60,6 +96,7 @@ module.exports = {
       api.sendMessage("AutoLink is now turned on for this chat.", event.threadID, event.messageID);
     }
   },
+
   onChat: async function ({ api, event }) {
     const threadID = event.threadID;
 
@@ -74,6 +111,7 @@ module.exports = {
       api.setMessageReaction("🫦", event.messageID, (err) => {}, true);
     }
   },
+
   downLoad: function (url, api, event) {
     const time = Date.now();
     const path = __dirname + `/cache/${time}.mp4`;
@@ -84,7 +122,7 @@ module.exports = {
       this.downloadFacebook(url, api, event, path);
     } else if (url.includes("tiktok")) {
       this.downloadTikTok(url, api, event, path);
-    } else if (url.includes("x.com")) {
+    } else if (url.includes("x.com") || url.includes("twitter")) {
       this.downloadTwitter(url, api, event, path);
     } else if (url.includes("pin.it")) {
       this.downloadPinterest(url, api, event, path);
@@ -92,6 +130,7 @@ module.exports = {
       this.downloadYouTube(url, api, event, path);
     }
   },
+
   downloadInstagram: async function (url, api, event, path) {
     try {
       const res = await this.getLink(url, api, event, path);
@@ -100,22 +139,15 @@ module.exports = {
         url: res,
         responseType: "arraybuffer"
       });
-      fs.writeFileSync(path, Buffer.from(response.data, "utf-8"));
-      if (fs.statSync(path).size / 1024 / 1024 > 25) {
-        return api.sendMessage("The file is too large, cannot be sent", event.threadID, () => fs.unlinkSync(path), event.messageID);
-      }
-
-      const shortUrl = await shortenURL(res);
-      const messageBody = `╔════ஜ۩۞۩ஜ═══╗\n          BBE  𝗔 𝗬 𝗔 𝗡\n ╚════ஜ۩۞۩ஜ═══╝\n\n🔗𝙳𝙾𝚆𝙽𝙻𝙾𝙰𝙳 𝚁𝚄𝙻: ${shortUrl}`;
-
-      api.sendMessage({
-        body: messageBody,
-        attachment: fs.createReadStream(path)
-      }, event.threadID, () => fs.unlinkSync(path), event.messageID);
+      // write binary buffer without utf-8 encoding
+      fs.writeFileSync(path, Buffer.from(response.data));
+      await this.sendDownloadedVideo(api, event, path, res);
     } catch (err) {
-      console.error(err);
+      console.error("downloadInstagram error:", err);
+      api.sendMessage("⚠️ ইনস্টাগ্রাম থেকে ডাউনলোড করতে সমস্যা হয়েছে।", event.threadID, event.messageID);
     }
   },
+
   downloadFacebook: async function (url, api, event, path) {
     try {
       const res = await fbDownloader(url);
@@ -126,50 +158,40 @@ module.exports = {
           url: videoUrl,
           responseType: "stream"
         });
-        if (response.headers['content-length'] > 87031808) {
-          return api.sendMessage("The file is too large, cannot be sent", event.threadID, () => fs.unlinkSync(path), event.messageID);
+        if (response.headers['content-length'] && parseInt(response.headers['content-length']) > 87031808) {
+          return api.sendMessage("The file is too large, cannot be sent", event.threadID, event.messageID);
         }
         response.data.pipe(fs.createWriteStream(path));
         response.data.on('end', async () => {
-          const shortUrl = await shortenURL(videoUrl);
-          const messageBody = `╔════ஜ۩۞۩ஜ═══╗\n           𝗜𝘁𝘇 𝗔𝗬𝗔𝗡\n ╚════ஜ۩۞۩ஜ═══╝\n\n🔗𝙳𝙾𝚆𝙽𝙻𝙾𝙰𝙳 𝚁𝚄𝙻: ${shortUrl}`;
-
-          api.sendMessage({
-            body: messageBody,
-            attachment: fs.createReadStream(path)
-          }, event.threadID, () => fs.unlinkSync(path), event.messageID);
+          await this.sendDownloadedVideo(api, event, path, videoUrl);
         });
       } else {
         api.sendMessage("", event.threadID, event.messageID);
       }
     } catch (err) {
-      console.error(err);
+      console.error("downloadFacebook error:", err);
+      api.sendMessage("⚠️ ফেসবুক থেকে ডাউনলোড করতে সমস্যা হয়েছে।", event.threadID, event.messageID);
     }
   },
+
   downloadTikTok: async function (url, api, event, path) {
     try {
       const res = await this.getLink(url, api, event, path);
+      // res could be object { downloadUrls: '...' } or array — handle both
+      const downloadUrl = Array.isArray(res) ? res[0] : (res.downloadUrls || res);
       const response = await axios({
         method: "GET",
-        url: res,
+        url: downloadUrl,
         responseType: "arraybuffer"
       });
-      fs.writeFileSync(path, Buffer.from(response.data, "utf-8"));
-      if (fs.statSync(path).size / 1024 / 1024 > 25) {
-        return api.sendMessage("The file is too large, cannot be sent", event.threadID, () => fs.unlinkSync(path), event.messageID);
-      }
-
-      const shortUrl = await shortenURL(res);
-      const messageBody = `╔════ஜ۩۞۩ஜ═══╗\n           𝗜𝘁𝘇 𝗔𝗬𝗔𝗡\n ╚════ஜ۩۞۩ஜ═══╝\n\n🔗𝙳𝙾𝚆𝙽𝙻𝙾𝙰𝙳 𝚁𝚄𝙻: ${shortUrl}`;
-
-      api.sendMessage({
-        body: messageBody,
-        attachment: fs.createReadStream(path)
-      }, event.threadID, () => fs.unlinkSync(path), event.messageID);
+      fs.writeFileSync(path, Buffer.from(response.data));
+      await this.sendDownloadedVideo(api, event, path, downloadUrl);
     } catch (err) {
-      console.error(err);
+      console.error("downloadTikTok error:", err);
+      api.sendMessage("⚠️ টিকটক থেকে ডাউনলোড করতে সমস্যা হয়েছে।", event.threadID, event.messageID);
     }
   },
+
   downloadTwitter: async function (url, api, event, path) {
     try {
       const res = await axios.get(`https://xdl-twitter.vercel.app/kshitiz?url=${encodeURIComponent(url)}`);
@@ -181,24 +203,20 @@ module.exports = {
         responseType: "stream"
       });
 
-      if (response.headers['content-length'] > 87031808) {
-        return api.sendMessage("The file is too large, cannot be sent", event.threadID, () => fs.unlinkSync(path), event.messageID);
+      if (response.headers['content-length'] && parseInt(response.headers['content-length']) > 87031808) {
+        return api.sendMessage("The file is too large, cannot be sent", event.threadID, event.messageID);
       }
 
       response.data.pipe(fs.createWriteStream(path));
       response.data.on('end', async () => {
-        const shortUrl = await shortenURL(videoUrl);
-        const messageBody = `╔════ஜ۩۞۩ஜ═══╗\n           𝗜𝘁𝘇 𝗔𝗬𝗔𝗡\n ╚════ஜ۩۞۩ஜ═══╝\n\n🔗𝙳𝙾𝚆𝙽𝙻𝙾𝙰𝙳 𝚁𝚄𝙻: ${shortUrl}`;
-
-        api.sendMessage({
-          body: messageBody,
-          attachment: fs.createReadStream(path)
-        }, event.threadID, () => fs.unlinkSync(path), event.messageID);
+        await this.sendDownloadedVideo(api, event, path, videoUrl);
       });
     } catch (err) {
-      console.error(err);
+      console.error("downloadTwitter error:", err);
+      api.sendMessage("⚠️ টুইটার থেকে ডাউনলোড করতে সমস্যা হয়েছে।", event.threadID, event.messageID);
     }
   },
+
   downloadPinterest: async function (url, api, event, path) {
     try {
       const res = await axios.get(`https://pindl-pinterest.vercel.app/kshitiz?url=${encodeURIComponent(url)}`);
@@ -210,24 +228,20 @@ module.exports = {
         responseType: "stream"
       });
 
-      if (response.headers['content-length'] > 87031808) {
-        return api.sendMessage("The file is too large, cannot be sent", event.threadID, () => fs.unlinkSync(path), event.messageID);
+      if (response.headers['content-length'] && parseInt(response.headers['content-length']) > 87031808) {
+        return api.sendMessage("The file is too large, cannot be sent", event.threadID, event.messageID);
       }
 
       response.data.pipe(fs.createWriteStream(path));
       response.data.on('end', async () => {
-        const shortUrl = await shortenURL(videoUrl);
-        const messageBody = `╔════ஜ۩۞۩ஜ═══╗\n           𝗜𝘁𝘇 𝗔𝗬𝗔𝗡\n ╚════ஜ۩۞۩ஜ═══╝\n\n🔗𝙳𝙾𝚆𝙽𝙻𝙾𝙰𝙳 𝚁𝚄𝙻: ${shortUrl}`;
-
-        api.sendMessage({
-          body: messageBody,
-          attachment: fs.createReadStream(path)
-        }, event.threadID, () => fs.unlinkSync(path), event.messageID);
+        await this.sendDownloadedVideo(api, event, path, videoUrl);
       });
     } catch (err) {
-      console.error(err);
+      console.error("downloadPinterest error:", err);
+      api.sendMessage("⚠️ পিন্টারেস্ট থেকে ডাউনলোড করতে সমস্যা হয়েছে।", event.threadID, event.messageID);
     }
   },
+
   downloadYouTube: async function (url, api, event, path) {
     try {
       const res = await axios.get(`https://yt-downloader-eta.vercel.app/kshitiz?url=${encodeURIComponent(url)}`);
@@ -239,22 +253,17 @@ module.exports = {
         responseType: "stream"
       });
 
-      if (response.headers['content-length'] > 87031808) {
-        return api.sendMessage("The file is too large, cannot be sent", event.threadID, () => fs.unlinkSync(path), event.messageID);
+      if (response.headers['content-length'] && parseInt(response.headers['content-length']) > 87031808) {
+        return api.sendMessage("The file is too large, cannot be sent", event.threadID, event.messageID);
       }
 
       response.data.pipe(fs.createWriteStream(path));
       response.data.on('end', async () => {
-        const shortUrl = await shortenURL(videoUrl);
-        const messageBody = `╔════ஜ۩۞۩ஜ═══╗\n           𝗜𝘁𝘇 𝗔  𝗬 𝗔 𝗡\n ╚════ஜ۩۞۩ஜ═══╝\n\n🔗𝙳𝙾𝚆𝙽𝙻𝙾𝙰𝙳 𝚁𝚄𝙻: ${shortUrl}`;
-
-        api.sendMessage({
-          body: messageBody,
-          attachment: fs.createReadStream(path)
-        }, event.threadID, () => fs.unlinkSync(path), event.messageID);
+        await this.sendDownloadedVideo(api, event, path, videoUrl);
       });
     } catch (err) {
-      console.error(err);
+      console.error("downloadYouTube error:", err);
+      api.sendMessage("⚠️ ইউটিউব থেকে ডাউনলোড করতে সমস্যা হয়েছে।", event.threadID, event.messageID);
     }
   },
 
@@ -285,13 +294,14 @@ module.exports = {
         }).catch(err => reject(err));
       } else if (url.includes("tiktok")) {
         this.queryTikTok(url).then(res => {
-          resolve(res.downloadUrls);
+          resolve(res.downloadUrls || res.downloadUrls || res);
         }).catch(err => reject(err));
       } else {
         reject(new Error("Unsupported platform. Only Instagram, Facebook, and TikTok are supported."));
       }
     });
   },
+
   queryTikTok: async function (url) {
     try {
       const res = await axios.get("https://ssstik.io/en");
@@ -343,31 +353,32 @@ module.exports = {
       };
     }
   },
+
   checkLink: function (url) {
-      if (
-        url.includes("instagram") ||
-        url.includes("facebook") ||
-        url.includes("fb.watch") ||
-        url.includes("tiktok") ||
-        url.includes("x.com") ||
-        url.includes("pin.it") ||
-        url.includes("youtu")
-      ) {
-        return {
-          url: url
-        };
-      }
-
-      const fbWatchRegex = /fb\.watch\/[a-zA-Z0-9_-]+/i;
-      if (fbWatchRegex.test(url)) {
-        return {
-          url: url
-        };
-      }
-
-      return null;
+    if (
+      url.includes("instagram") ||
+      url.includes("facebook") ||
+      url.includes("fb.watch") ||
+      url.includes("tiktok") ||
+      url.includes("x.com") ||
+      url.includes("pin.it") ||
+      url.includes("youtu")
+    ) {
+      return {
+        url: url
+      };
     }
-  };
+
+    const fbWatchRegex = /fb\.watch\/[a-zA-Z0-9_-]+/i;
+    if (fbWatchRegex.test(url)) {
+      return {
+        url: url
+      };
+    }
+
+    return null;
+  }
+};
 
 async function fbDownloader(url) {
   try {
